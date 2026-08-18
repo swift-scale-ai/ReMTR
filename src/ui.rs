@@ -58,15 +58,27 @@ fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         received as f64 * 100.0 / sent as f64
     };
+    let bar_color = loss_color(100.0 - response);
+    let label_color = if response >= 50.0 {
+        Color::Black
+    } else {
+        Color::White
+    };
     let gauge = Gauge::default()
         .block(
             Block::default()
                 .title(" Probe responses ")
                 .borders(Borders::ALL),
         )
-        .gauge_style(Style::default().fg(loss_color(100.0 - response)))
+        .gauge_style(Style::default().fg(bar_color).bg(Color::Rgb(38, 38, 38)))
         .percent(response.clamp(0.0, 100.0) as u16)
-        .label(format!("{response:.1}% · {received}/{sent}"));
+        .label(Span::styled(
+            format!("{response:.1}% · {received}/{sent}"),
+            Style::default()
+                .fg(label_color)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .use_unicode(true);
     frame.render_widget(gauge, columns[1]);
 }
 
