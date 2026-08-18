@@ -5,6 +5,15 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # ReMTR's documented MSRV is Rust 1.83. Keep compatibility pins until
+      # the project deliberately raises rust-version and its CI toolchain.
+      - dependency-name: instability
+        versions: [">= 0.3.10"]
+      - dependency-name: ratatui
+        versions: [">= 0.30.0"]
+      - dependency-name: unicode-segmentation
+        versions: [">= 1.13.0"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
