@@ -39,6 +39,19 @@ For a finite text report:
 sudo ./target/release/remtr --snapshot --cycles 3 example.com
 ```
 
+## Install a GitHub release
+
+After downloading the archive and its checksum:
+
+```bash
+shasum -a 256 -c remtr-VERSION-aarch64-apple-darwin.tar.gz.sha256
+tar -xzf remtr-VERSION-aarch64-apple-darwin.tar.gz
+cd remtr-VERSION-aarch64-apple-darwin
+./install.sh
+```
+
+CI builds are available from successful workflow runs for 14 days. Version tags publish permanent Developer ID-signed and Apple-notarized assets through GitHub Releases.
+
 Useful options:
 
 ```text
@@ -72,6 +85,7 @@ Both projects are distributed under GPL-compatible terms. ReMTR is licensed unde
 - [User Guide](docs/USER_GUIDE.md) · [简体中文](docs/USER_GUIDE.zh-CN.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Development](docs/DEVELOPMENT.md)
+- [Release and packaging](docs/RELEASE.md)
 
 ## License
 

@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  release:
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify native arm64 runner
+        run: test "$(uname -m)" = arm64
+      - name: Install Rust 1.83
+        run: |
+          rustup toolchain install 1.83.0 --profile minimal --component rustfmt,clippy
+          rustup default 1.83.0
+      - name: Verify tag matches Cargo version
+        run: |
+          version="$(awk -F '"' '/^version = "/ { print $2; exit }' Cargo.toml)"
+          test "$GITHUB_REF_NAME" = "v$version"
+      - name: Format, lint, and test
+        run: |
+          cargo fmt -- --check
+          cargo check --locked
+          cargo test --locked --all-targets
+          cargo clippy --locked --all-targets -- -D warnings
+      - name: Build release
+        run: cargo build --release --locked
+      - name: Loopback probe smoke test
+        run: sudo ./target/release/remtr --snapshot --max-hops 1 --timeout-ms 100 --interval-ms 10 127.0.0.1
+      - name: Sign and notarize
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: ./scripts/sign-and-notarize-macos.sh target/release/remtr
+      - name: Package signed binary
+        run: ./scripts/package-macos.sh --binary target/release/remtr
+      - name: Verify package
+        env:
+          REMTR_REQUIRE_SIGNED: 1
+        run: ./scripts/verify-package.sh dist/remtr-*.tar.gz
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --generate-notes --verify-tag

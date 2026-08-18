@@ -6,6 +6,9 @@ rust-version = "1.83"
 description = "A graphical MTR-inspired network path monitor for Apple Silicon Macs"
 license = "GPL-2.0-or-later"
 readme = "README.md"
+repository = "https://github.com/swiftscalecloud/ReMTR"
+homepage = "https://github.com/swiftscalecloud/ReMTR"
+documentation = "https://github.com/swiftscalecloud/ReMTR/tree/main/docs"
 keywords = ["mtr", "traceroute", "icmp", "macos", "tui"]
 categories = ["command-line-utilities", "network-programming"]
 
