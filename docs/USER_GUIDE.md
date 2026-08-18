@@ -18,7 +18,7 @@ The target is resolved to its first IPv4 address. A raw ICMP Echo Request is sen
 - **Hop table:** status, address, replies/sent, loss, last/average/P95 latency, jitter, and an inline recent-latency trend. Wide terminals also show best/worst latency, standard deviation, and route-change count.
 - **Selected hop:** timeouts, P95, standard deviation, range, jitter, route changes, and known path count.
 - **Latency history:** a sparkline for the selected hop; missing replies appear as zero-height samples.
-- **Route graph:** a compact path view with loss and an inline trend. `◆` marks the destination, `↺` a changed route, `!` high loss, and `×` no reply.
+- **Route topology:** a compact path view showing current and previously observed addresses without repeating the table's loss and RTT data. `◆` marks the destination, `↺` a changed route, `!` high loss, and `×` no reply.
 
 Latency is green below 60 ms, yellow from 60 through 149 ms, and red at 150 ms or above. Loss is green below 5%, yellow from 5% through 19%, and red at 20% or above. Numeric values remain visible, so color is never the only signal.
 

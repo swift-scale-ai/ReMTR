@@ -18,7 +18,7 @@ ReMTR is an early implementation. It is not yet a drop-in replacement for upstre
 - Color-coded latency and loss severity
 - Adaptive wide/compact tables with inline per-hop latency trends
 - Selected-hop metrics and latency sparkline
-- Route graph, path-change counters, and status markers
+- Route topology with current/alternate paths, change counters, and status markers
 - Pause, reset, and hop selection controls
 - Finite snapshot mode for diagnostics and automation
 - Pure Rust statistics and UI, with `unsafe` isolated to the Darwin socket adapter

@@ -274,7 +274,6 @@ fn draw_visuals(frame: &mut Frame, app: &App, area: Rect) {
     );
 
     let mut lines = Vec::new();
-    let route_width = usize::from(area.width.saturating_sub(2));
     for hop in app.model.visible_hops() {
         let color = hop_color(hop);
         let address = hop
@@ -282,27 +281,36 @@ fn draw_visuals(frame: &mut Frame, app: &App, area: Rect) {
             .map(|address| address.to_string())
             .unwrap_or_else(|| "no reply".to_owned());
         let (status, _) = hop_status(hop, app.model.reached_hop);
-        let path = format!("{:>2} {status} {address}", hop.ttl);
-        let loss = format!("{:>5.1}%", hop.loss_percent());
-        let trend = inline_trend(hop, 10);
-        let padding = route_width
-            .saturating_sub(path.chars().count() + loss.chars().count() + trend.chars().count() + 2)
-            .max(1);
         lines.push(Line::from(vec![
-            Span::styled(path, Style::default().fg(color)),
-            Span::raw(" ".repeat(padding)),
             Span::styled(
-                format!("{loss} "),
-                Style::default().fg(loss_color(hop.loss_percent())),
+                format!("{:>2} {status}─ ", hop.ttl),
+                Style::default().fg(color),
             ),
-            Span::styled(trend, Style::default().fg(Color::Cyan)),
+            Span::styled(address, Style::default().fg(color)),
+            Span::styled(
+                if hop.route_changes > 0 {
+                    format!("  ↺{}", hop.route_changes)
+                } else {
+                    String::new()
+                },
+                Style::default().fg(Color::Yellow),
+            ),
         ]));
+        for alternate in hop.alternate_addresses.iter().rev().take(2).rev() {
+            lines.push(Line::from(vec![
+                Span::styled("     └ ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!("previous {alternate}"),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]));
+        }
     }
     frame.render_widget(
         Paragraph::new(lines)
             .block(
                 Block::default()
-                    .title(" Route graph · loss · RTT → ")
+                    .title(" Route topology · alternate paths ")
                     .borders(Borders::ALL),
             )
             .wrap(Wrap { trim: false }),
