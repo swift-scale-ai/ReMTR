@@ -14,10 +14,11 @@ ReMTR is an early implementation. It is not yet a drop-in replacement for upstre
 ## First release features
 
 - Native Darwin raw ICMP probing without invoking `ping`, `traceroute`, or `mtr`
-- Per-hop loss, sent count, last/average/best/worst latency, and current jitter
+- Per-hop replies/timeouts, loss, last/average/best/worst/P95 latency, standard deviation, and current jitter
 - Color-coded latency and loss severity
-- Selected-hop latency sparkline
-- Route graph and path-change markers
+- Adaptive wide/compact tables with inline per-hop latency trends
+- Selected-hop metrics and latency sparkline
+- Route topology with current/alternate paths, change counters, and status markers
 - Pause, reset, and hop selection controls
 - Finite snapshot mode for diagnostics and automation
 - Pure Rust statistics and UI, with `unsafe` isolated to the Darwin socket adapter

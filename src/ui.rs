@@ -58,15 +58,27 @@ fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         received as f64 * 100.0 / sent as f64
     };
+    let bar_color = loss_color(100.0 - response);
+    let label_color = if response >= 50.0 {
+        Color::Black
+    } else {
+        Color::White
+    };
     let gauge = Gauge::default()
         .block(
             Block::default()
                 .title(" Probe responses ")
                 .borders(Borders::ALL),
         )
-        .gauge_style(Style::default().fg(loss_color(100.0 - response)))
+        .gauge_style(Style::default().fg(bar_color).bg(Color::Rgb(38, 38, 38)))
         .percent(response.clamp(0.0, 100.0) as u16)
-        .label(format!("{response:.1}% · {received}/{sent}"));
+        .label(Span::styled(
+            format!("{response:.1}% · {received}/{sent}"),
+            Style::default()
+                .fg(label_color)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .use_unicode(true);
     frame.render_widget(gauge, columns[1]);
 }
 
@@ -78,6 +90,8 @@ fn draw_hops(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         0
     };
+    let show_trend = area.width >= 88;
+    let show_detailed = area.width >= 118;
     let rows = visible
         .iter()
         .enumerate()
@@ -88,29 +102,44 @@ fn draw_hops(frame: &mut Frame, app: &App, area: Rect) {
                 .address
                 .map(|address| address.to_string())
                 .unwrap_or_else(|| "*".to_owned());
-            let route_changed = if hop.alternate_addresses.is_empty() {
-                ""
-            } else {
-                " ↺"
-            };
-            let row = Row::new(vec![
+            let (status, status_color) = hop_status(hop, app.model.reached_hop);
+            let mut cells = vec![
+                Cell::from(status).style(Style::default().fg(status_color)),
                 Cell::from(hop.ttl.to_string()).style(Style::default().fg(Color::Blue)),
-                Cell::from(format!("{address}{route_changed}")).style(Style::default().fg(
-                    if hop.address.is_some() {
-                        Color::White
-                    } else {
-                        Color::DarkGray
-                    },
-                )),
+                Cell::from(address).style(Style::default().fg(if hop.address.is_some() {
+                    Color::White
+                } else {
+                    Color::DarkGray
+                })),
+                Cell::from(format!("{}/{}", hop.received, hop.sent))
+                    .style(Style::default().fg(Color::Cyan)),
                 Cell::from(format!("{:5.1}%", hop.loss_percent()))
                     .style(Style::default().fg(loss_color(hop.loss_percent()))),
-                Cell::from(hop.sent.to_string()).style(Style::default().fg(Color::Cyan)),
                 metric_cell(hop.last_ms),
                 metric_cell(hop.average_ms),
-                metric_cell(hop.best_ms),
-                metric_cell(hop.worst_ms),
+                metric_cell(hop.percentile_ms(0.95)),
                 metric_cell(hop.jitter_ms),
-            ]);
+            ];
+            if show_detailed {
+                cells.extend([
+                    metric_cell(hop.best_ms),
+                    metric_cell(hop.worst_ms),
+                    metric_cell(hop.standard_deviation_ms()),
+                    Cell::from(hop.route_changes.to_string()).style(Style::default().fg(
+                        if hop.route_changes > 0 {
+                            Color::Yellow
+                        } else {
+                            Color::DarkGray
+                        },
+                    )),
+                ]);
+            }
+            if show_trend {
+                cells.push(
+                    Cell::from(inline_trend(hop, 12)).style(Style::default().fg(Color::Cyan)),
+                );
+            }
+            let row = Row::new(cells);
             if index == app.selected {
                 row.style(Style::default().bg(Color::Blue).fg(Color::White))
             } else {
@@ -118,44 +147,109 @@ fn draw_hops(frame: &mut Frame, app: &App, area: Rect) {
             }
         });
 
-    let table = Table::new(
-        rows,
-        [
-            Constraint::Length(4),
-            Constraint::Min(16),
-            Constraint::Length(8),
+    let mut headers = vec![
+        "",
+        "Hop",
+        "Host",
+        "Recv/Sent",
+        "Loss",
+        "Last",
+        "Avg",
+        "P95",
+        "Jitter",
+    ];
+    let mut widths = vec![
+        Constraint::Length(2),
+        Constraint::Length(3),
+        Constraint::Min(15),
+        Constraint::Length(9),
+        Constraint::Length(7),
+        Constraint::Length(7),
+        Constraint::Length(7),
+        Constraint::Length(7),
+        Constraint::Length(7),
+    ];
+    if show_detailed {
+        headers.extend(["Best", "Worst", "StdDev", "Chg"]);
+        widths.extend([
             Constraint::Length(7),
-            Constraint::Length(8),
-            Constraint::Length(8),
-            Constraint::Length(8),
-            Constraint::Length(8),
-            Constraint::Length(8),
-        ],
-    )
-    .header(
-        Row::new([
-            "Hop", "Host", "Loss", "Sent", "Last", "Avg", "Best", "Worst", "Jitter",
-        ])
-        .style(
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ),
-    )
-    .block(
-        Block::default()
-            .title(" Network path · milliseconds ")
-            .borders(Borders::ALL),
-    )
-    .column_spacing(1);
+            Constraint::Length(7),
+            Constraint::Length(7),
+            Constraint::Length(4),
+        ]);
+    }
+    if show_trend {
+        headers.push("Recent RTT");
+        widths.push(Constraint::Length(12));
+    }
+    let table = Table::new(rows, widths)
+        .header(
+            Row::new(headers).style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        )
+        .block(
+            Block::default()
+                .title(" Network path · ◆ target · ↺ changed · ! loss · × no reply · milliseconds ")
+                .borders(Borders::ALL),
+        )
+        .column_spacing(1);
     frame.render_widget(table, area);
 }
 
 fn draw_visuals(frame: &mut Frame, app: &App, area: Rect) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(8), Constraint::Min(6)])
+        .constraints([
+            Constraint::Length(7),
+            Constraint::Length(8),
+            Constraint::Min(6),
+        ])
         .split(area);
+    let details = if let Some(hop) = app.selected_hop() {
+        vec![
+            Line::from(format!(
+                " Host: {}",
+                hop.address
+                    .map(|address| address.to_string())
+                    .unwrap_or_else(|| "no reply".to_owned())
+            )),
+            Line::from(format!(
+                " Replies: {}/{} · timeouts {}",
+                hop.received,
+                hop.sent,
+                hop.timeouts()
+            )),
+            Line::from(format!(
+                " P95 {} · StdDev {}",
+                metric_text(hop.percentile_ms(0.95)),
+                metric_text(hop.standard_deviation_ms())
+            )),
+            Line::from(format!(
+                " Range {}–{} · jitter {}",
+                metric_text(hop.best_ms),
+                metric_text(hop.worst_ms),
+                metric_text(hop.jitter_ms)
+            )),
+            Line::from(format!(
+                " Route changes: {} · known paths {}",
+                hop.route_changes,
+                hop.alternate_addresses.len() + usize::from(hop.address.is_some())
+            )),
+        ]
+    } else {
+        vec![Line::from(" Waiting for probes")]
+    };
+    frame.render_widget(
+        Paragraph::new(details).block(
+            Block::default()
+                .title(" Selected hop ")
+                .borders(Borders::ALL),
+        ),
+        rows[0],
+    );
     let history: Vec<u64> = app
         .selected_hop()
         .map(|hop| {
@@ -176,7 +270,7 @@ fn draw_visuals(frame: &mut Frame, app: &App, area: Rect) {
             .data(&history)
             .max(max)
             .style(Style::default().fg(Color::Cyan)),
-        rows[0],
+        rows[1],
     );
 
     let mut lines = Vec::new();
@@ -186,26 +280,41 @@ fn draw_visuals(frame: &mut Frame, app: &App, area: Rect) {
             .address
             .map(|address| address.to_string())
             .unwrap_or_else(|| "no reply".to_owned());
+        let (status, _) = hop_status(hop, app.model.reached_hop);
         lines.push(Line::from(vec![
-            Span::styled(format!("{:>2} ● ", hop.ttl), Style::default().fg(color)),
+            Span::styled(
+                format!("{:>2} {status}─ ", hop.ttl),
+                Style::default().fg(color),
+            ),
             Span::styled(address, Style::default().fg(color)),
+            Span::styled(
+                if hop.route_changes > 0 {
+                    format!("  ↺{}", hop.route_changes)
+                } else {
+                    String::new()
+                },
+                Style::default().fg(Color::Yellow),
+            ),
         ]));
-        if hop.ttl < app.model.visible_hops().len() as u8 {
-            lines.push(Line::from(Span::styled(
-                "   │",
-                Style::default().fg(Color::DarkGray),
-            )));
+        for alternate in hop.alternate_addresses.iter().rev().take(2).rev() {
+            lines.push(Line::from(vec![
+                Span::styled("     └ ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!("previous {alternate}"),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]));
         }
     }
     frame.render_widget(
         Paragraph::new(lines)
             .block(
                 Block::default()
-                    .title(" Route graph ")
+                    .title(" Route topology · alternate paths ")
                     .borders(Borders::ALL),
             )
             .wrap(Wrap { trim: false }),
-        rows[1],
+        rows[2],
     );
 }
 
@@ -237,6 +346,52 @@ fn metric_cell(value: Option<f64>) -> Cell<'static> {
         }
         None => Cell::from("     -").style(Style::default().fg(Color::DarkGray)),
     }
+}
+
+fn metric_text(value: Option<f64>) -> String {
+    value.map_or_else(|| "-".to_owned(), |value| format!("{value:.1} ms"))
+}
+
+fn hop_status(hop: &HopStats, reached_hop: Option<u8>) -> (&'static str, Color) {
+    if reached_hop == Some(hop.ttl) {
+        ("◆", Color::Cyan)
+    } else if hop.sent == 0 {
+        ("○", Color::DarkGray)
+    } else if matches!(hop.history.back(), Some(None)) {
+        ("×", Color::Red)
+    } else if hop.loss_percent() >= 20.0 {
+        ("!", Color::Red)
+    } else if hop.route_changes > 0 {
+        ("↺", Color::Yellow)
+    } else {
+        ("●", Color::Green)
+    }
+}
+
+fn inline_trend(hop: &HopStats, width: usize) -> String {
+    const BARS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+    let samples: Vec<Option<f64>> = hop.history.iter().rev().take(width).copied().collect();
+    let max = samples
+        .iter()
+        .flatten()
+        .copied()
+        .fold(0.0_f64, f64::max)
+        .max(1.0);
+    let mut trend: String = samples
+        .into_iter()
+        .rev()
+        .map(|sample| match sample {
+            Some(value) => {
+                let index = ((value / max) * (BARS.len() - 1) as f64).round() as usize;
+                BARS[index.min(BARS.len() - 1)]
+            }
+            None => '·',
+        })
+        .collect();
+    while trend.chars().count() < width {
+        trend.insert(0, ' ');
+    }
+    trend
 }
 
 fn latency_color(milliseconds: f64) -> Color {

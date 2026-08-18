@@ -24,8 +24,9 @@ pub struct HopStats {
     pub worst_ms: Option<f64>,
     pub average_ms: Option<f64>,
     pub jitter_ms: Option<f64>,
+    pub route_changes: u64,
     pub history: VecDeque<Option<f64>>,
-    sum_ms: f64,
+    mean_m2: f64,
 }
 
 impl HopStats {
@@ -41,8 +42,9 @@ impl HopStats {
             worst_ms: None,
             average_ms: None,
             jitter_ms: None,
+            route_changes: 0,
             history: VecDeque::with_capacity(HISTORY_LENGTH),
-            sum_ms: 0.0,
+            mean_m2: 0.0,
         }
     }
 
@@ -54,11 +56,31 @@ impl HopStats {
         }
     }
 
+    pub fn timeouts(&self) -> u64 {
+        self.sent.saturating_sub(self.received)
+    }
+
+    pub fn standard_deviation_ms(&self) -> Option<f64> {
+        (self.received > 1).then(|| (self.mean_m2 / (self.received - 1) as f64).sqrt())
+    }
+
+    pub fn percentile_ms(&self, percentile: f64) -> Option<f64> {
+        let mut values: Vec<f64> = self.history.iter().flatten().copied().collect();
+        if values.is_empty() {
+            return None;
+        }
+        values.sort_by(f64::total_cmp);
+        let percentile = percentile.clamp(0.0, 1.0);
+        let index = ((values.len() - 1) as f64 * percentile).ceil() as usize;
+        values.get(index).copied()
+    }
+
     fn record(&mut self, result: &ProbeResult) {
         self.sent += 1;
         if let Some(address) = result.address {
             if self.address != Some(address) {
                 if let Some(previous) = self.address.replace(address) {
+                    self.route_changes += 1;
                     if !self.alternate_addresses.contains(&previous) {
                         self.alternate_addresses.push(previous);
                     }
@@ -69,7 +91,10 @@ impl HopStats {
         let milliseconds = result.rtt.map(|duration| duration.as_secs_f64() * 1000.0);
         if let Some(milliseconds) = milliseconds {
             self.received += 1;
-            self.sum_ms += milliseconds;
+            let previous_average = self.average_ms.unwrap_or(milliseconds);
+            let delta = milliseconds - previous_average;
+            let new_average = previous_average + delta / self.received as f64;
+            self.mean_m2 += delta * (milliseconds - new_average);
             self.best_ms = Some(
                 self.best_ms
                     .map_or(milliseconds, |value| value.min(milliseconds)),
@@ -78,7 +103,7 @@ impl HopStats {
                 self.worst_ms
                     .map_or(milliseconds, |value| value.max(milliseconds)),
             );
-            self.average_ms = Some(self.sum_ms / self.received as f64);
+            self.average_ms = Some(new_average);
             self.jitter_ms = self.last_ms.map(|last| (milliseconds - last).abs());
             self.last_ms = Some(milliseconds);
         }
@@ -155,6 +180,7 @@ mod tests {
             reached: false,
         });
         assert_eq!(hop.loss_percent(), 50.0);
+        assert_eq!(hop.timeouts(), 1);
         assert_eq!(hop.average_ms, Some(10.0));
     }
 
@@ -171,5 +197,21 @@ mod tests {
         }
         assert_eq!(hop.address, Some(Ipv4Addr::new(10, 0, 0, 2)));
         assert_eq!(hop.alternate_addresses, vec![Ipv4Addr::new(10, 0, 0, 1)]);
+        assert_eq!(hop.route_changes, 1);
+    }
+
+    #[test]
+    fn computes_percentile_and_standard_deviation() {
+        let mut hop = HopStats::new(3);
+        for milliseconds in [10, 20, 30, 40] {
+            hop.record(&ProbeResult {
+                ttl: 3,
+                address: Some(Ipv4Addr::LOCALHOST),
+                rtt: Some(Duration::from_millis(milliseconds)),
+                reached: false,
+            });
+        }
+        assert_eq!(hop.percentile_ms(0.95), Some(40.0));
+        assert!((hop.standard_deviation_ms().unwrap() - 12.9099).abs() < 0.001);
     }
 }
