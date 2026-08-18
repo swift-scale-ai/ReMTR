@@ -61,21 +61,25 @@ fn print_snapshot(config: &Config, address: std::net::Ipv4Addr) -> io::Result<()
         "ReMTR {} ({}) · cycles {}",
         model.target, model.target_address, model.cycles
     );
-    println!("Hop  Host              Loss%  Sent    Last     Avg    Best   Worst  Jitter");
+    println!(
+        "Hop  Host              Loss%   Recv/Sent    Last     Avg     P95  StdDev  Jitter  Chg"
+    );
     for hop in model.visible_hops() {
         println!(
-            "{:>3}  {:<16} {:>5.1} {:>5} {:>7} {:>7} {:>7} {:>7} {:>7}",
+            "{:>3}  {:<16} {:>5.1} {:>5}/{:<5} {:>7} {:>7} {:>7} {:>7} {:>7} {:>4}",
             hop.ttl,
             hop.address
                 .map(|address| address.to_string())
                 .unwrap_or_else(|| "*".to_owned()),
             hop.loss_percent(),
+            hop.received,
             hop.sent,
             metric(hop.last_ms),
             metric(hop.average_ms),
-            metric(hop.best_ms),
-            metric(hop.worst_ms),
+            metric(hop.percentile_ms(0.95)),
+            metric(hop.standard_deviation_ms()),
             metric(hop.jitter_ms),
+            hop.route_changes,
         );
     }
     Ok(())
