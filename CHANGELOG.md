@@ -2,7 +2,7 @@
 
 All notable changes to ReMTR will be documented here.
 
-## 0.1.1
+## 0.2.0
 
 - Add adaptive compact and wide network-path tables.
 - Add per-hop reply/timeout totals, P95 latency, standard deviation, and route-change counts.
