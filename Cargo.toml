@@ -13,7 +13,7 @@ keywords = ["mtr", "traceroute", "icmp", "macos", "tui"]
 categories = ["command-line-utilities", "network-programming"]
 
 [dependencies]
-crossterm = "0.28.1"
+crossterm = "0.29.0"
 instability = "=0.3.9"
 libc = "=0.2.175"
 ratatui = "0.29.0"
